@@ -125,7 +125,6 @@ export function Tracker({ reviews: initial, notionUrl: initialNotion }: { review
       <div className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 lg:px-12">
         <header className="flex flex-col gap-5 border-b border-[#172B3E]/15 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#43719A]">Job search operating system</p><h1 className="font-serif text-4xl leading-none tracking-[-0.04em] sm:text-6xl">Stay in motion.</h1></div>
-          <p className="text-xs text-[#2D4E6C]"><strong>Keyboard:</strong> Alt+N new check-in · Alt+D dashboard · Alt+H history</p>
         </header>
 
         <section ref={dashboardRef} id="dashboard" tabIndex={-1} aria-labelledby="dashboard-heading" className="py-6">
