@@ -13,12 +13,6 @@ const metricDefs = [
 ] as const
 type Metric = (typeof metricDefs)[number][0]
 
-const monday = () => {
-  const date = new Date()
-  date.setDate(date.getDate() - ((date.getDay() + 6) % 7))
-  return date.toISOString().slice(0, 10)
-}
-
 const sameMonth = (value: string, month: string) => value.slice(0, 7) === month
 
 const formatWeekRange = (value: string) => {
@@ -39,15 +33,20 @@ const formatWeekRange = (value: string) => {
   return `${month.format(start)} ${start.getUTCDate()}–${end.getUTCDate()}, ${startYear}`
 }
 
-export function Tracker({ reviews: initial, notionUrl: initialNotion }: { reviews: Review[]; notionUrl: string }) {
+const formatShortDate = (value: string) =>
+  new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
+    new Date(`${value.slice(0, 10)}T12:00:00.000Z`),
+  )
+
+export function Tracker({ reviews: initial, notionUrl: initialNotion, defaultWeek }: { reviews: Review[]; notionUrl: string; defaultWeek: string }) {
   const [state, action, saving] = useActionState<ActionState, FormData>(saveReview, { ok: false, message: '' })
   const [reviews, setReviews] = useState(initial)
   const [editing, setEditing] = useState<Review | null>(null)
   const [metric, setMetric] = useState<Metric>('conversations')
   const [period, setPeriod] = useState<'all' | 'week' | 'month'>('all')
-  const [selectedWeek, setSelectedWeek] = useState(reviews[0]?.weekOf.slice(0, 10) ?? monday())
-  const [selectedMonth, setSelectedMonth] = useState((reviews[0]?.weekOf ?? new Date().toISOString()).slice(0, 7))
-  const [formWeek, setFormWeek] = useState(monday())
+  const [selectedWeek, setSelectedWeek] = useState(reviews[0]?.weekOf.slice(0, 10) ?? defaultWeek)
+  const [selectedMonth, setSelectedMonth] = useState((reviews[0]?.weekOf ?? defaultWeek).slice(0, 7))
+  const [formWeek, setFormWeek] = useState(defaultWeek)
   const notionUrl = initialNotion
   const [pending, startTransition] = useTransition()
   const dashboardRef = useRef<HTMLElement>(null)
@@ -73,7 +72,7 @@ export function Tracker({ reviews: initial, notionUrl: initialNotion }: { review
       if (key === 'n') {
         event.preventDefault()
         setEditing(null)
-        setFormWeek(monday())
+        setFormWeek(defaultWeek)
         requestAnimationFrame(() => formRef.current?.querySelector<HTMLInputElement>('[name="weekOf"]')?.focus())
       }
       if (key === 'h') {
@@ -83,7 +82,7 @@ export function Tracker({ reviews: initial, notionUrl: initialNotion }: { review
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [])
+  }, [defaultWeek])
 
   const visible = useMemo(() => reviews.filter((review) => {
     if (period === 'week') return review.weekOf.slice(0, 10) === selectedWeek
@@ -108,7 +107,7 @@ export function Tracker({ reviews: initial, notionUrl: initialNotion }: { review
   }
 
   const remove = (review: Review) => {
-    if (!window.confirm(`Delete the check-in for ${new Date(review.weekOf).toLocaleDateString()}? This cannot be undone.`)) return
+    if (!window.confirm(`Delete the check-in for ${formatWeekRange(review.weekOf)}? This cannot be undone.`)) return
     startTransition(async () => {
       const result = await deleteReview(review.id)
       if (result.reviews) setReviews(result.reviews)
@@ -138,9 +137,9 @@ export function Tracker({ reviews: initial, notionUrl: initialNotion }: { review
             </div>
           </div>
           <div className="grid gap-4 lg:grid-cols-[0.75fr_1.25fr]">
-            <div className="rounded-[28px] bg-[#172B3E] p-7 text-white"><p className="text-sm text-[#B3C7F0]">{selected.label}</p><p className="mt-2 text-6xl font-semibold tracking-[-0.06em]">{selected.value}</p><p className="mt-3 text-sm text-[#C7DBEF]">{selected.target ? Math.round((selected.value / selected.target) * 100) : 0}% of {selected.target} planned</p><div role="progressbar" aria-label={`${selected.label} progress`} aria-valuemin={0} aria-valuemax={selected.target || 0} aria-valuenow={selected.value} className="mt-6 h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-[#8CB7DF]" style={{ width: `${Math.min(100, selected.target ? selected.value / selected.target * 100 : 0)}%` }} /></div></div>
+            <div className="rounded-[28px] bg-[#172B3E] p-7 text-white"><p className="text-sm text-[#B3C7F0]">{selected.label}</p><p className="mt-2 text-6xl font-semibold tracking-[-0.06em]">{selected.value}</p><p className="mt-3 text-sm text-[#C7DBEF]">{selected.target ? Math.round((selected.value / selected.target) * 100) : 0}% of {selected.target} planned</p><div role="progressbar" aria-label={`${selected.label} progress`} aria-valuemin={0} aria-valuemax={Math.max(1, selected.target, selected.value)} aria-valuenow={selected.value} className="mt-6 h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-[#8CB7DF]" style={{ width: `${Math.min(100, selected.target ? selected.value / selected.target * 100 : 0)}%` }} /></div></div>
             <div role="list" aria-label={`${selected.label} by week`} className="flex min-h-52 items-end gap-3 overflow-x-auto rounded-[28px] border border-[#172B3E]/15 bg-white p-6">
-              {visible.length ? [...visible].reverse().map((review) => <div role="listitem" aria-label={`${new Date(review.weekOf).toLocaleDateString()}: ${review[metric] ?? 0} ${selected.label}${review.pivotNote ? `. Plan pivot: ${review.pivotNote}` : ''}`} key={review.id} className="group flex min-w-12 flex-1 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold">{review[metric]}</span><div aria-hidden="true" className="w-full rounded-t-lg bg-[#0A2A92] transition-all group-hover:bg-[#1E4CD2]" style={{ height: `${Math.max(8, Number(review[metric]) / maxChart * 130)}px` }} /><span aria-hidden="true" className="whitespace-nowrap text-[10px] text-[#43719A]">{new Date(review.weekOf).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>{review.pivotNote && <span aria-hidden="true" title={review.pivotNote} className="h-2 w-2 rounded-full bg-[#C05884]" />}</div>) : <p className="m-auto text-sm text-[#43719A]">No check-ins in this period yet.</p>}
+              {visible.length ? [...visible].reverse().map((review) => <div role="listitem" aria-label={`${formatWeekRange(review.weekOf)}: ${review[metric] ?? 0} ${selected.label}${review.pivotNote ? `. Plan pivot: ${review.pivotNote}` : ''}`} key={review.id} className="group flex min-w-12 flex-1 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold">{review[metric]}</span><div aria-hidden="true" className="w-full rounded-t-lg bg-[#0A2A92] transition-all group-hover:bg-[#1E4CD2]" style={{ height: `${Math.max(8, Number(review[metric]) / maxChart * 130)}px` }} /><span aria-hidden="true" className="whitespace-nowrap text-[10px] text-[#43719A]">{formatShortDate(review.weekOf)}</span>{review.pivotNote && <span aria-hidden="true" title={review.pivotNote} className="h-2 w-2 rounded-full bg-[#C05884]" />}</div>) : <p className="m-auto text-sm text-[#43719A]">No check-ins in this period yet.</p>}
             </div>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-3 lg:grid-cols-6">{totals.map((item) => item.key === 'applications' ? <div key={item.key} className={`rounded-2xl border p-4 ${metric === item.key ? 'border-[#C46F45] bg-[#F4DED2]' : 'border-[#172B3E]/15 bg-white'}`}><button type="button" aria-pressed={metric === item.key} onClick={() => setMetric(item.key)} className="w-full text-left"><span className="text-xs text-[#43719A]">{item.label}</span><strong className="mt-2 block text-2xl">{item.value}</strong></button>{notionUrl ? <div className="mt-3 border-t border-[#172B3E]/10 pt-3"><a href={notionUrl} target="_blank" rel="noreferrer" aria-label="Open application tracker in Notion, opens in a new tab" className="text-xs font-bold text-[#0A2A92] underline">Open application tracker <span aria-hidden="true">↗</span></a></div> : null}</div> : <button type="button" aria-pressed={metric === item.key} key={item.key} onClick={() => setMetric(item.key)} className={`rounded-2xl border p-4 text-left ${metric === item.key ? 'border-[#C46F45] bg-[#F4DED2]' : 'border-[#172B3E]/15 bg-white'}`}><span className="text-xs text-[#43719A]">{item.label}</span><strong className="mt-2 block text-2xl">{item.value}</strong></button>)}</div>
